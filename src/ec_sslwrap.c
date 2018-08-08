@@ -1145,69 +1145,6 @@ static bool sslw_loadCAPrivateKey(const char *f, EVP_PKEY **ppkey)
     return ret;
 }
 
-// load X509 Req
-static bool sslw_loadX509Req(const char *f, X509_REQ **ppReq)
-{
-    bool ret;
-    BIO *in = NULL;
-
-    if (!f) {
-        FATAL_ERROR("CA REQ is NULL!");
-        return false;
-    }
-
-    if (!ppReq) {
-        FATAL_ERROR("PPREQ is NULL");
-        return false;
-    }
-
-    in = BIO_new_file(f,"r");
-    ret = (PEM_read_bio_X509_REQ(in, ppReq, NULL, NULL) != NULL);
-
-    BIO_free(in);
-
-    if (!ret) {
-        FATAL_ERROR("ERROR Loading CA REQ");
-        return false;
-    }
-    return ret;
-}
-
-/*
- * Sign certificate with CA-certificate
- */
-static int sslw_do_X509_sign(X509 *cert, EVP_PKEY *pkey, const EVP_MD *md)
-{
-    int rv;
-    EVP_MD_CTX *mctx;
-    EVP_PKEY_CTX *pkctx = NULL;
-
-    fprintf(stdout,"A\n");
-    mctx = EVP_MD_CTX_new();
-    fprintf(stdout,"B\n");
-
-    if (NULL==mctx) {
-        fprintf(stdout,"C\n");
-        return 0;
-    }
-    fprintf(stdout,"D\n");
-    //EVP_MD_CTX_init(&mctx);
-    //rv = EVP_DigestSignInit(&mctx, &pkctx, md, NULL, pkey);
-    rv = EVP_DigestSignInit(mctx, NULL, md, NULL, pkey);
-    fprintf(stdout,"E\n");
-
-    if (rv > 0) {
-        fprintf(stdout,"F\n");
-        rv = X509_sign_ctx(cert, mctx);
-    }
-    fprintf(stdout,"G\n");
-    //EVP_MD_CTX_cleanup(&mctx);
-
-    EVP_MD_CTX_free(mctx);
-    fprintf(stdout,"H\n");
-    return rv > 0 ? 1 : 0;
-}
-
 /*
  * Create a self-signed certificate
  */
@@ -1277,11 +1214,6 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
            FATAL_ERROR("ERROR: SSL CA Certificate Private Key file is not defined!");
            return NULL;
        }
-       if(!EC_GBL_OPTIONS->ssl_req) {
-           FATAL_ERROR("ERROR: SSL CA Certificate REQ file is not defined!");
-           return NULL;
-       }
-
        if (!sslw_loadCA(EC_GBL_OPTIONS->ssl_cert,&ca_cert)) {
            FATAL_ERROR("ERROR while loading CA Certificate!");
            return NULL;
@@ -1291,25 +1223,8 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
            FATAL_ERROR("ERROR while loading CA Certificate Private Key!");
            return NULL;
        }
-       //if (!sslw_loadX509Req(EC_GBL_OPTIONS->ssl_req,&ca_req)) {
-       //    EVP_PKEY_free(ca_pkey);
-       //    X509_free(ca_cert);
-       //    FATAL_ERROR("ERROR while loading CA Certificate Private Key!");
-       //    return NULL;
-       //}
 
-       //// set pubkey from req
-       //ca_pktmp = X509_REQ_get_pubkey(ca_req);
-       //if (!X509_set_pubkey(out_cert, ca_pktmp)) {
-       //    X509_free(ca_req);
-       //    EVP_PKEY_free(ca_pkey);
-       //    X509_free(ca_cert);
-       //    FATAL_ERROR("ERROR setting public key of signed certificate!");
-       //    return NULL;
-       //}
-       //EVP_PKEY_free(ca_pktmp);
        int ext_count = X509_get_ext_count(server_cert);
-       //fprintf(stdout,"ExtCount = %d\n",ext_count);
 
        for (int k=0; k <ext_count; k++ ){
            X509_EXTENSION *ex = X509_get_ext(server_cert, k);
@@ -1332,25 +1247,18 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
        X509_add_ext(out_cert, ext, -1);
        X509_EXTENSION_free(ext);
 
-       //fprintf(stdout, "Tiago 1\n");
        if (!X509_set_issuer_name(out_cert, X509_get_subject_name(ca_cert))){
            FATAL_ERROR("Tiago A\n");
            return NULL;
        }
-       //fprintf(stdout, "Tiago 2\n");
 
-       //if (!sslw_do_X509_sign(out_cert, ca_pkey, EVP_sha1())) {
        if (!X509_sign(out_cert, ca_pkey, EVP_sha1())) {
-           //X509_free(ca_req);
            EVP_PKEY_free(ca_pkey);
            X509_free(ca_cert);
            FATAL_ERROR("ERROR while signing the generated certificate!");
            return NULL;
        }
-       //fprintf(stdout, "Tiago 3\n");
 
-
-       //X509_free(ca_req);
        EVP_PKEY_free(ca_pkey);
        X509_free(ca_cert);
    }

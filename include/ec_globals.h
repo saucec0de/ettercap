@@ -107,7 +107,6 @@ struct ec_options {
    char *script;
    char *ssl_cert;
    char *ssl_pkey;
-   char *ssl_req;
    FILE *msg_fd;
    int (*format)(const u_char *, size_t, u_char *);
    regex_t *regex;

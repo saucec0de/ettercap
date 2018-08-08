@@ -78,8 +78,7 @@ void ec_usage(void)
    fprintf(stdout, "      --certificate <file>    certificate file to use for SSL MiTM\n");
    fprintf(stdout, "      --private-key <file>    private key file to use for SSL MiTM\n");
    fprintf(stdout, "      --ca                    certificate for MiTM is a CA-certificate\n");
-   fprintf(stdout, "      --req <file>            CA-certificate REQ file (PEM w/ public key)\n");
-   
+
    fprintf(stdout, "\nUser Interface Type:\n");
    fprintf(stdout, "  -T, --text                  use text only GUI\n");
    fprintf(stdout, "       -q, --quiet                 do not display packet contents\n");
@@ -202,7 +201,6 @@ void parse_options(int argc, char **argv)
       { "gateway", required_argument, NULL, 'Y' },
       { "certificate", required_argument, NULL, 0 },
       { "private-key", required_argument, NULL, 0 },
-      { "req", required_argument, NULL, 0 },
       { "ca", no_argument, NULL, 0 },
 
       
@@ -221,7 +219,6 @@ void parse_options(int argc, char **argv)
    EC_GBL_OPTIONS->broadcast = 0;
    EC_GBL_OPTIONS->ssl_cert = NULL;
    EC_GBL_OPTIONS->ssl_pkey = NULL;
-   EC_GBL_OPTIONS->ssl_req = NULL;
    EC_GBL_OPTIONS->ssl_ca_cert = 0;
 
 /* OPTIONS INITIALIZED */
@@ -416,8 +413,6 @@ void parse_options(int argc, char **argv)
          case 0:
                   if (!strcmp(long_options[option_index].name, "ca")) {
                       EC_GBL_OPTIONS->ssl_ca_cert = 1;
-                  } else if (!strcmp(long_options[option_index].name, "req")) {
-                      EC_GBL_OPTIONS->ssl_req = strdup(optarg);
                   } else if (!strcmp(long_options[option_index].name, "certificate")) {
                       EC_GBL_OPTIONS->ssl_cert = strdup(optarg);
                   } else if (!strcmp(long_options[option_index].name, "private-key")) {
