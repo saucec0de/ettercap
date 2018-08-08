@@ -1146,70 +1146,6 @@ static bool sslw_loadCAPrivateKey(const char *f, EVP_PKEY **ppkey)
     return ret;
 }
 
-// static void sslw_dump_certificate_extensions( X509 *cert )
-// {
-//     char buf[1024];
-//
-//     int ext_count = X509_get_ext_count(cert);
-//     for (int k=0; k <ext_count; k++ ){
-//         X509_EXTENSION* ex = X509_get_ext(cert, k);
-//         if( ex == NULL )
-//             continue;
-//         ASN1_OBJECT *obj = X509_EXTENSION_get_object(ex); // ex is your X509_EXTENSION *
-//         int nid = OBJ_obj2nid(obj);
-//
-//         ASN1_OCTET_STRING *data;
-//         OBJ_obj2txt((char *)buf, 100, obj, 0);
-//         printf("name = %s\n", buf);
-//
-//         char hex_data[1024] = {0};
-//
-//         data = X509_EXTENSION_get_data(ex);
-//
-//         int j = 0;
-//         for(int i = 0; i < data->length ; i++)
-//         {
-//             sprintf(&hex_data[j], "%02x:", data->data[i]);
-//             j+=3;
-//         }
-//         hex_data[j-1] = '\0';
-//
-//         if (NID_authority_key_identifier==nid) {
-//             printf("AUTHORITY ID ; ");
-//         } else if (NID_subject_key_identifier==nid) {
-//             printf("SUBJECT ID   ; ");
-//         } else if (NID_basic_constraints==nid) {
-//             printf("BASIC CONSTR.; ");
-//         } else
-//             printf("             ; ");
-//
-//         fprintf(stdout, "VALUE = %d -> %s\n",nid, hex_data);
-//
-//         printf("\n");
-//     }
-//     printf("--------------------------------\n");
-// }
-//
-// void sslw_test( X509 *ca_cert, X509 *out_cert )
-// {
-//     // Taken from: https://github.com/warmlab/study/blob/master/openssl/x509.c
-//     // Set authority keyid
-//     AUTHORITY_KEYID *akid = AUTHORITY_KEYID_new();
-//     if (akid) {
-//         //akid->issuer = GENERAL_NAMES_new();
-//         //GENERAL_NAME *gen_name = GENERAL_NAME_new();
-//         //gen_name->type = GEN_DIRNAME;
-//         //gen_name->d.directoryName = X509_NAME_dup(X509_get_subject_name(ca_cert));
-//         //sk_GENERAL_NAME_push(akid->issuer, gen_name);
-//         akid->keyid = (ASN1_OCTET_STRING*)X509_get_ext_d2i(ca_cert, NID_subject_key_identifier, NULL, NULL);
-//         //akid->serial = ASN1_INTEGER_dup(X509_get_serialNumber(ca_cert));
-//
-//         X509_add1_ext_i2d(out_cert, NID_authority_key_identifier, akid, 0, X509V3_ADD_DEFAULT);
-//
-//         AUTHORITY_KEYID_free(akid);
-//     }
-// }
-
 /*
  * Create a self-signed certificate
  */
@@ -1288,15 +1224,8 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
            FATAL_ERROR("ERROR while loading CA Certificate Private Key!");
            return NULL;
        }
-/*
-       printf("CA_CERT:\n");
-       sslw_dump_certificate_extensions(ca_cert);
 
-       printf("SERVER CERT:\n");
-       sslw_dump_certificate_extensions(server_cert);
-*/
        int ext_count = X509_get_ext_count(server_cert);
-
        for (int k=0; k <ext_count; k++ ){
            X509_EXTENSION *ex = X509_get_ext(server_cert, k);
            if( ex == NULL )
@@ -1310,22 +1239,12 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
 
        }
 
-       //ext = X509V3_EXT_conf_nid(NULL, NULL, NID_subject_key_identifier, "hash");
-       //X509_add_ext(out_cert, ext, -1);
-       //X509_EXTENSION_free(ext);
-
-       //ext = X509V3_EXT_conf_nid(NULL, NULL, NID_authority_key_identifier, "keyid:always");
-       //X509_add_ext(out_cert, ext, -1);
-       //X509_EXTENSION_free(ext);
-       //
        AUTHORITY_KEYID *akid = AUTHORITY_KEYID_new();
        if (akid) {
            akid->keyid = (ASN1_OCTET_STRING*)X509_get_ext_d2i(ca_cert, NID_subject_key_identifier, NULL, NULL);
            X509_add1_ext_i2d(out_cert, NID_authority_key_identifier, akid, 0, X509V3_ADD_DEFAULT);
            AUTHORITY_KEYID_free(akid);
        }
-
-//       sslw_test(ca_cert,out_cert);
 
        if (!X509_set_issuer_name(out_cert, X509_get_subject_name(ca_cert))){
            FATAL_ERROR("Could not set issuer name\n");
@@ -1338,10 +1257,7 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
            FATAL_ERROR("ERROR while signing the generated certificate!");
            return NULL;
        }
-/*
-       printf("OUT_CERT:\n");
-       sslw_dump_certificate_extensions(out_cert);
-*/
+
        EVP_PKEY_free(ca_pkey);
        X509_free(ca_cert);
    }
