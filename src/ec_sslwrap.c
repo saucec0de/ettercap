@@ -1208,15 +1208,15 @@ static int sslw_do_X509_sign(X509 *cert, EVP_PKEY *pkey, const EVP_MD *md)
     return rv > 0 ? 1 : 0;
 }
 
-/* 
+/*
  * Create a self-signed certificate
  */
 static X509 *sslw_create_selfsigned(X509 *server_cert)
-{   
+{
    X509 *out_cert;
    X509_EXTENSION *ext;
    int index = 0;
-   
+
    if ((out_cert = X509_new()) == NULL)
       return NULL;
 
@@ -1226,35 +1226,35 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
    X509_set_notBefore(out_cert, X509_get_notBefore(server_cert));
    X509_set_notAfter(out_cert, X509_get_notAfter(server_cert));
    X509_set_subject_name(out_cert, X509_get_subject_name(server_cert));
+   X509_set_pubkey(out_cert, global_pk);
 
+   index = X509_get_ext_by_NID(server_cert, NID_authority_key_identifier, -1);
+   if (index >=0) {
+       ext = X509_get_ext(server_cert, index);
+#ifdef HAVE_OPAQUE_RSA_DSA_DH
+       ASN1_OCTET_STRING* os;
+       os = X509_EXTENSION_get_data (ext);
+#endif
+       if (ext) {
+#ifdef HAVE_OPAQUE_RSA_DSA_DH
+           os->data[7] = 0xe7;
+           os->data[8] = 0x7e;
+           X509_EXTENSION_set_data (ext, os);
+#else
+           ext->value->data[7] = 0xe7;
+           ext->value->data[8] = 0x7e;
+#endif
+           X509_add_ext(out_cert, ext, -1);
+       }
+   }
 
    if (!EC_GBL_OPTIONS->ssl_ca_cert) {
        /* Self-sign our certificate */
-       X509_set_pubkey(out_cert, global_pk);
        X509_set_issuer_name(out_cert, X509_get_issuer_name(server_cert));
        /* Modify the issuer a little bit */
        //X509_NAME_add_entry_by_txt(X509_get_issuer_name(out_cert), "L", MBSTRING_ASC, " ", -1, -1, 0);
 
-       index = X509_get_ext_by_NID(server_cert, NID_authority_key_identifier, -1);
-       if (index >=0) {
-           ext = X509_get_ext(server_cert, index);
-#ifdef HAVE_OPAQUE_RSA_DSA_DH
-           ASN1_OCTET_STRING* os;
-           os = X509_EXTENSION_get_data (ext);
-#endif
-           if (ext) {
-#ifdef HAVE_OPAQUE_RSA_DSA_DH
-               os->data[7] = 0xe7;
-               os->data[8] = 0x7e;
-               X509_EXTENSION_set_data (ext, os);
-#else
-               ext->value->data[7] = 0xe7;
-               ext->value->data[8] = 0x7e;
-#endif
-               X509_add_ext(out_cert, ext, -1);
-           }
-       }
-       if (!X509_sign(out_cert, global_pk, EVP_sha1())) {
+       if (!X509_sign(out_cert, global_pk, EVP_sha256())) {
            X509_free(out_cert);
            DEBUG_MSG("Error self-signing X509");
            return NULL;
@@ -1295,7 +1295,6 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
        //    return NULL;
        //}
 
-       X509_set_pubkey(out_cert, global_pk);
        //// set pubkey from req
        //ca_pktmp = X509_REQ_get_pubkey(ca_req);
        //if (!X509_set_pubkey(out_cert, ca_pktmp)) {
@@ -1306,14 +1305,15 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
        //    return NULL;
        //}
        //EVP_PKEY_free(ca_pktmp);
-       fprintf(stdout, "Tiago 1\n");
+
+       //fprintf(stdout, "Tiago 1\n");
        if (!X509_set_issuer_name(out_cert, X509_get_subject_name(ca_cert))){
            FATAL_ERROR("Tiago A\n");
            return NULL;
        }
-       fprintf(stdout, "Tiago 2\n");
+       //fprintf(stdout, "Tiago 2\n");
 
-       //if (!sslw_do_X509_sign(out_cert, ca_pkey, EVP_sha1())) {
+       //if (!sslw_do_X509_sign(out_cert, ca_pkey, EVP_sha256())) {
        if (!X509_sign(out_cert, ca_pkey, EVP_sha1())) {
            //X509_free(ca_req);
            EVP_PKEY_free(ca_pkey);
@@ -1321,7 +1321,7 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
            FATAL_ERROR("ERROR while signing the generated certificate!");
            return NULL;
        }
-       fprintf(stdout, "Tiago 3\n");
+       //fprintf(stdout, "Tiago 3\n");
 
 
        //X509_free(ca_req);
