@@ -1216,11 +1216,13 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
    X509 *out_cert;
    X509_EXTENSION *ext;
    int index = 0;
+   struct timeval time;
+   gettimeofday(&time,NULL);
 
    if ((out_cert = X509_new()) == NULL)
       return NULL;
 
-   srand ( time(NULL) ); // Not very clever...
+   srand((time.tv_sec * 1000) + (time.tv_usec / 1000));
 
    /* Set out public key, real server name... */
    X509_set_version(out_cert, X509_get_version(server_cert));
@@ -1306,6 +1308,21 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
        //    return NULL;
        //}
        //EVP_PKEY_free(ca_pktmp);
+       int ext_count = X509_get_ext_count(server_cert);
+       //fprintf(stdout,"ExtCount = %d\n",ext_count);
+
+       for (int k=0; k <ext_count; k++ ){
+           X509_EXTENSION *ex = X509_get_ext(server_cert, k);
+           if( ex == NULL )
+               continue;
+
+           // Add all the alternative DNS Names for this certificate
+           int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ex));
+           if (nid==NID_subject_alt_name) {
+               X509_add_ext(out_cert, ex, -1);
+           }
+
+       }
 
        ext = X509V3_EXT_conf_nid(NULL, NULL, NID_subject_key_identifier, "hash");
        X509_add_ext(out_cert, ext, -1);
