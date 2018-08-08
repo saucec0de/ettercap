@@ -55,6 +55,8 @@
 /* don't include kerberos. RH sux !! */
 #define OPENSSL_NO_KRB5 1
 #include <openssl/ssl.h>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
 #define HAVE_OPAQUE_RSA_DSA_DH 1 /* since 1.1.0 -pre5 */
@@ -745,7 +747,7 @@ static int sslw_sync_ssl(struct accepted_entry *ae)
       return -E_INVALID;
    }
 
-   if (!EC_GBL_OPTIONS->ssl_cert) {
+   if (!(EC_GBL_OPTIONS->ssl_cert && !EC_GBL_OPTIONS->ssl_ca_cert)) {
    	/* Create the fake certificate */
    	ae->cert = sslw_create_selfsigned(server_cert);  
    	X509_free(server_cert);
@@ -1085,6 +1087,127 @@ static void sslw_initialize_po(struct packet_object *po, u_char *p_data)
 }
 
 
+/*
+ * Load the CA-certificate
+ */
+static bool sslw_loadCA(const char *f, X509 ** px509)
+{
+    bool ret;
+
+    if (EC_GBL_OPTIONS->ssl_ca_cert) {
+        BIO *in = NULL;
+
+        in  = BIO_new_file(f,"r");
+        ret = (PEM_read_bio_X509(in, px509, NULL, NULL) != NULL);
+
+        BIO_free(in);
+
+        return ret;
+    } else {
+        FATAL_ERROR("Certificate of CA is not enabled! (--ca)");
+        return false;
+    }
+}
+
+/*
+ * Load CA private key
+ */
+static bool sslw_loadCAPrivateKey(const char *f, EVP_PKEY **ppkey)
+{
+    bool ret;
+    BIO *in = NULL;
+    RSA *r = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (!f) {
+        FATAL_ERROR("CA Private Key is NULL!");
+        return false;
+    }
+
+    if (!ppkey) {
+        FATAL_ERROR("PPKEY is NULL");
+        return false;
+    }
+
+    in = BIO_new_file(f,"r");
+    ret = (PEM_read_bio_RSAPrivateKey(in, &r, NULL, NULL) != NULL);
+    if(!ret) {
+        BIO_free(in);
+        FATAL_ERROR("ERROR Loading CA Private Key");
+        return false;
+    }
+
+    pkey = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(pkey, r);
+    *ppkey = pkey;
+    r = NULL;
+    BIO_free(in);
+    return ret;
+}
+
+// load X509 Req
+static bool sslw_loadX509Req(const char *f, X509_REQ **ppReq)
+{
+    bool ret;
+    BIO *in = NULL;
+
+    if (!f) {
+        FATAL_ERROR("CA REQ is NULL!");
+        return false;
+    }
+
+    if (!ppReq) {
+        FATAL_ERROR("PPREQ is NULL");
+        return false;
+    }
+
+    in = BIO_new_file(f,"r");
+    ret = (PEM_read_bio_X509_REQ(in, ppReq, NULL, NULL) != NULL);
+
+    BIO_free(in);
+
+    if (!ret) {
+        FATAL_ERROR("ERROR Loading CA REQ");
+        return false;
+    }
+    return ret;
+}
+
+/*
+ * Sign certificate with CA-certificate
+ */
+static int sslw_do_X509_sign(X509 *cert, EVP_PKEY *pkey, const EVP_MD *md)
+{
+    int rv;
+    EVP_MD_CTX *mctx;
+    EVP_PKEY_CTX *pkctx = NULL;
+
+    fprintf(stdout,"A\n");
+    mctx = EVP_MD_CTX_new();
+    fprintf(stdout,"B\n");
+
+    if (NULL==mctx) {
+        fprintf(stdout,"C\n");
+        return 0;
+    }
+    fprintf(stdout,"D\n");
+    //EVP_MD_CTX_init(&mctx);
+    //rv = EVP_DigestSignInit(&mctx, &pkctx, md, NULL, pkey);
+    rv = EVP_DigestSignInit(mctx, NULL, md, NULL, pkey);
+    fprintf(stdout,"E\n");
+
+    if (rv > 0) {
+        fprintf(stdout,"F\n");
+        rv = X509_sign_ctx(cert, mctx);
+    }
+    fprintf(stdout,"G\n");
+    //EVP_MD_CTX_cleanup(&mctx);
+
+    EVP_MD_CTX_free(mctx);
+    fprintf(stdout,"H\n");
+    return rv > 0 ? 1 : 0;
+}
+
 /* 
  * Create a self-signed certificate
  */
@@ -1102,38 +1225,108 @@ static X509 *sslw_create_selfsigned(X509 *server_cert)
    ASN1_INTEGER_set(X509_get_serialNumber(out_cert), EC_MAGIC_32);
    X509_set_notBefore(out_cert, X509_get_notBefore(server_cert));
    X509_set_notAfter(out_cert, X509_get_notAfter(server_cert));
-   X509_set_pubkey(out_cert, global_pk);
    X509_set_subject_name(out_cert, X509_get_subject_name(server_cert));
-   X509_set_issuer_name(out_cert, X509_get_issuer_name(server_cert));  
 
-   /* Modify the issuer a little bit */ 
-   //X509_NAME_add_entry_by_txt(X509_get_issuer_name(out_cert), "L", MBSTRING_ASC, " ", -1, -1, 0);
 
-   index = X509_get_ext_by_NID(server_cert, NID_authority_key_identifier, -1);
-   if (index >=0) {
-      ext = X509_get_ext(server_cert, index);
+   if (!EC_GBL_OPTIONS->ssl_ca_cert) {
+       /* Self-sign our certificate */
+       X509_set_pubkey(out_cert, global_pk);
+       X509_set_issuer_name(out_cert, X509_get_issuer_name(server_cert));
+       /* Modify the issuer a little bit */
+       //X509_NAME_add_entry_by_txt(X509_get_issuer_name(out_cert), "L", MBSTRING_ASC, " ", -1, -1, 0);
+
+       index = X509_get_ext_by_NID(server_cert, NID_authority_key_identifier, -1);
+       if (index >=0) {
+           ext = X509_get_ext(server_cert, index);
 #ifdef HAVE_OPAQUE_RSA_DSA_DH
-      ASN1_OCTET_STRING* os;
-      os = X509_EXTENSION_get_data (ext);
+           ASN1_OCTET_STRING* os;
+           os = X509_EXTENSION_get_data (ext);
 #endif
-      if (ext) {
+           if (ext) {
 #ifdef HAVE_OPAQUE_RSA_DSA_DH
-         os->data[7] = 0xe7;
-         os->data[8] = 0x7e;
-         X509_EXTENSION_set_data (ext, os);
+               os->data[7] = 0xe7;
+               os->data[8] = 0x7e;
+               X509_EXTENSION_set_data (ext, os);
 #else
-         ext->value->data[7] = 0xe7;
-         ext->value->data[8] = 0x7e;
+               ext->value->data[7] = 0xe7;
+               ext->value->data[8] = 0x7e;
 #endif
-         X509_add_ext(out_cert, ext, -1);
-      }
-   }
+               X509_add_ext(out_cert, ext, -1);
+           }
+       }
+       if (!X509_sign(out_cert, global_pk, EVP_sha1())) {
+           X509_free(out_cert);
+           DEBUG_MSG("Error self-signing X509");
+           return NULL;
+       }
+   } else {
+       /* Sign our certificate with the given CA-certificate */
+       X509     *ca_cert = NULL;
+       X509_REQ *ca_req = NULL;
+       EVP_PKEY *ca_pkey = NULL;
+       EVP_PKEY *ca_pktmp = NULL;
 
-   /* Self-sign our certificate */
-   if (!X509_sign(out_cert, global_pk, EVP_sha1())) {
-      X509_free(out_cert);
-      DEBUG_MSG("Error self-signing X509");
-      return NULL;
+       if(!EC_GBL_OPTIONS->ssl_cert) {
+           FATAL_ERROR("ERROR: SSL CA Certificate file is not defined!");
+           return NULL;
+       }
+       if(!EC_GBL_OPTIONS->ssl_pkey) {
+           FATAL_ERROR("ERROR: SSL CA Certificate Private Key file is not defined!");
+           return NULL;
+       }
+       if(!EC_GBL_OPTIONS->ssl_req) {
+           FATAL_ERROR("ERROR: SSL CA Certificate REQ file is not defined!");
+           return NULL;
+       }
+
+       if (!sslw_loadCA(EC_GBL_OPTIONS->ssl_cert,&ca_cert)) {
+           FATAL_ERROR("ERROR while loading CA Certificate!");
+           return NULL;
+       }
+       if (!sslw_loadCAPrivateKey(EC_GBL_OPTIONS->ssl_pkey,&ca_pkey)) {
+           X509_free(ca_cert);
+           FATAL_ERROR("ERROR while loading CA Certificate Private Key!");
+           return NULL;
+       }
+       //if (!sslw_loadX509Req(EC_GBL_OPTIONS->ssl_req,&ca_req)) {
+       //    EVP_PKEY_free(ca_pkey);
+       //    X509_free(ca_cert);
+       //    FATAL_ERROR("ERROR while loading CA Certificate Private Key!");
+       //    return NULL;
+       //}
+
+       X509_set_pubkey(out_cert, global_pk);
+       //// set pubkey from req
+       //ca_pktmp = X509_REQ_get_pubkey(ca_req);
+       //if (!X509_set_pubkey(out_cert, ca_pktmp)) {
+       //    X509_free(ca_req);
+       //    EVP_PKEY_free(ca_pkey);
+       //    X509_free(ca_cert);
+       //    FATAL_ERROR("ERROR setting public key of signed certificate!");
+       //    return NULL;
+       //}
+       //EVP_PKEY_free(ca_pktmp);
+       fprintf(stdout, "Tiago 1\n");
+       if (!X509_set_issuer_name(out_cert, X509_get_subject_name(ca_cert))){
+           FATAL_ERROR("Tiago A\n");
+           return NULL;
+       }
+       fprintf(stdout, "Tiago 2\n");
+
+       //if (!sslw_do_X509_sign(out_cert, ca_pkey, EVP_sha1())) {
+       if (!X509_sign(out_cert, ca_pkey, EVP_sha1())) {
+           //X509_free(ca_req);
+           EVP_PKEY_free(ca_pkey);
+           X509_free(ca_cert);
+           FATAL_ERROR("ERROR while signing the generated certificate!");
+           return NULL;
+       }
+       fprintf(stdout, "Tiago 3\n");
+
+
+       //X509_free(ca_req);
+       EVP_PKEY_free(ca_pkey);
+       X509_free(ca_cert);
    }
      
    return out_cert;
@@ -1163,7 +1356,7 @@ static void sslw_init(void)
 		FATAL_ERROR("Can't open \"%s\" file : %s", EC_GBL_OPTIONS->ssl_pkey, strerror(errno));
 	}
 
-	if (EC_GBL_OPTIONS->ssl_cert) {
+	if (EC_GBL_OPTIONS->ssl_cert && !EC_GBL_OPTIONS->ssl_ca_cert) {
 		if (SSL_CTX_use_certificate_file(ssl_ctx_client, EC_GBL_OPTIONS->ssl_cert, SSL_FILETYPE_PEM) == 0) {
 			FATAL_ERROR("Can't open \"%s\" file : %s", EC_GBL_OPTIONS->ssl_cert, strerror(errno));
 		}

@@ -90,6 +90,7 @@ struct ec_options {
    char gateway:1;
    char lifaces:1;
    char broadcast:1;
+   char ssl_ca_cert:1;
    char reversed;
    char *hostsfile;
    LIST_HEAD(plugin_list_t, plugin_list) plugins;
@@ -106,6 +107,7 @@ struct ec_options {
    char *script;
    char *ssl_cert;
    char *ssl_pkey;
+   char *ssl_req;
    FILE *msg_fd;
    int (*format)(const u_char *, size_t, u_char *);
    regex_t *regex;
